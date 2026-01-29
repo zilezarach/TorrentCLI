@@ -4,7 +4,6 @@ Torrent CLI Script - Enhanced UI Version
 A command-line interface for interacting with qBittorrent via Typer, with support
 for searching torrents via zil_tor API, scheduling downloads, and monitoring torrent progress.
 """
-
 import sys
 import json
 import time
@@ -42,6 +41,7 @@ from zil_api_client import GoTorrentAPI, SearchResult, DownloadType, APIError
 install()
 app = typer.Typer()
 console = Console()
+
 # Set up configuration locations
 HOME = Path.home()
 CONFIG_DIR = HOME / "torrent_cli"
@@ -49,6 +49,7 @@ CONFIG_PATH = CONFIG_DIR / "config.json"
 HISTORY_PATH = CONFIG_DIR / "history.json"
 SCHEDULE_PATH = CONFIG_DIR / "schedule.json"
 LAST_RESULTS = CONFIG_DIR / "last.json"
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "download_path": "/mnt/nextcloud/Downloads",
     "zil_api": "http://127.0.0.1:9117",
@@ -164,7 +165,7 @@ def health_monitor() -> None:
         cfg = load_json(CONFIG_PATH)
         is_healthy = True
         try:
-            test_url = cfg["zil_api"] + "test"
+            test_url = cfg["zil_api"] + "/test"
             r = requests.get(test_url, timeout=20)
             is_healthy &= r.status_code == 200
         except Exception:
@@ -204,30 +205,32 @@ def schedule_runner() -> None:
 
 
 def show_welcome_banner():
-    banner = r"""
-TorrentCLI β — shadow terminal pirate edition
-       ██╗  ██╗ █████╗ ██████╗ ██████╗  ██████╗ ████████╗
-       ██║  ██║██╔══██╗██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝
-       ███████║███████║██████╔╝██████╔╝██║   ██║   ██║
-       ╚════██║██╔══██║██╔══██╗██╔══██╗██║   ██║   ██║
-            ██║██║  ██║██║  ██║██║  ██║╚██████╔╝   ██║
-            ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝    ╚═╝
+    console.clear()
 
-         ZilTorrent • qBittorrent • Indexer
+    INNER_WIDTH = 67  # must match box width minus borders
 
-  Most useful commands right now:
+    def line(content="", style="bold cyan"):
+        return Text(f"║ {content.center(INNER_WIDTH)} ║\n", style=style)
 
-    browse              →  interactive fuzzy search (recommended)
-    search "query"      →  classic keyword search
-    search-movies ...   →  movies only
-    download N          →  grab result #N from last search
-    list                →  what's currently downloading
-    dashboard           →  quick status overview
+    banner = Text()
+    banner.append("╔" + "═" * (INNER_WIDTH + 2) + "╗\n", style="bold cyan")
 
-  Type a command or press ENTER to continue...
-"""
-    console.print(banner, style="bold cyan", justify="left")
-    console.print("\n[dim]Pro tip: most people just type 'browse' first[/dim]\n")
+    banner.append(line())
+    banner.append(line("██╗  ██╗ █████╗ ██████╗ ██████╗  ██████╗ ████████╗", "bold magenta"))
+    banner.append(line("██║  ██║██╔══██╗██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝", "bold magenta"))
+    banner.append(line("███████║███████║██████╔╝██████╔╝██║   ██║   ██║", "bold magenta"))
+    banner.append(line("╚════██║██╔══██║██╔══██╗██╔══██╗██║   ██║   ██║", "bold magenta"))
+    banner.append(line("     ██║██║  ██║██║  ██║██║  ██║╚██████╔╝   ██║", "bold magenta"))
+    banner.append(line("     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝    ╚═╝", "bold magenta"))
+    banner.append(line())
+
+    banner.append(line("🏴‍☠️  TorrentCLI β — Shadow Terminal Edition  🏴‍☠️", "bold yellow"))
+    banner.append(line("ZilTorrent • qBittorrent • Multi-Indexer", "dim white"))
+    banner.append(line())
+
+    banner.append("╚" + "═" * (INNER_WIDTH + 2) + "╝\n", style="bold cyan")
+
+    console.print(banner)
 
 
 def find_torrent_by_name(
@@ -256,7 +259,6 @@ def find_torrent_by_name(
 def download_direct_file(result: Dict[str, Any]) -> bool:
     """
     Download a direct file (for LibGen books, etc.)
-
     Returns:
         True if successful, False otherwise
     """
@@ -265,7 +267,6 @@ def download_direct_file(result: Dict[str, Any]) -> bool:
         cfg.get("direct_download_path", DEFAULT_CONFIG["direct_download_path"])
     )
     download_path.mkdir(parents=True, exist_ok=True)
-
     # Create filename from title and extension
     extra = result.get("extra", {})
     extension = extra.get("extension", "pdf")
@@ -275,7 +276,6 @@ def download_direct_file(result: Dict[str, Any]) -> bool:
     safe_title = safe_title[:200]  # Limit filename length
     filename = f"{safe_title}.{extension}"
     destination = download_path / filename
-
     # Get MD5 from extra data
     md5 = extra.get("md5")
     if not md5:
@@ -287,7 +287,6 @@ def download_direct_file(result: Dict[str, Any]) -> bool:
             )
         )
         return False
-
     # Show info panel
     info_panel = Panel(
         f"[cyan]Title:[/cyan] {result.get('title')}\n"
@@ -300,18 +299,15 @@ def download_direct_file(result: Dict[str, Any]) -> bool:
         box=box.ROUNDED,
     )
     console.print(info_panel)
-
     # Get the actual download URL from the API
     console.print("[dim]→ Getting download URL...[/dim]")
     try:
         api = get_api_client()
-        download_url = api.get_download_url(md5)
         source_hint = ""
         if result.get("source", "").lower().startswith("annas"):
             source_hint = "annasarchive"
         elif result.get("source", "").lower() == "libgen":
             source_hint = "libgen"
-
         console.print(
             f"[dim]→ Getting download URL (source=auto, hint={source_hint or 'none'})...[/dim]"
         )
@@ -330,7 +326,6 @@ def download_direct_file(result: Dict[str, Any]) -> bool:
                 )
             )
             return False
-
         console.print(f"[dim]→ Download URL obtained[/dim]")
     except Exception as e:
         console.print(
@@ -341,95 +336,149 @@ def download_direct_file(result: Dict[str, Any]) -> bool:
             )
         )
         return False
-
-    # Download with progress
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}[/bold blue]"),
-        BarColumn(bar_width=40),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        DownloadColumn(),
-        TransferSpeedColumn(),
-        console=console,
-        expand=True,
-    ) as progress:
-        task = progress.add_task(f"Downloading {filename[:40]}...", total=100)
-
+    # Download with progress and retry logic
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
         try:
-            # Download file directly
-            response = requests.get(download_url, stream=True, timeout=300)
-            response.raise_for_status()
-
-            total_size = int(response.headers.get("content-length", 0))
-            downloaded = 0
-
-            with open(destination, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size > 0:
-                            percentage = (downloaded / total_size) * 100
-                            progress.update(task, completed=percentage)
-                        else:
-                            # If we don't know total size, just show as indeterminate
-                            progress.update(
-                                task, completed=(downloaded / (1024 * 1024)) % 100
-                            )
-
-            # Verify file was downloaded
-            file_size = destination.stat().st_size
-            if file_size < 1024:  # Less than 1KB is suspicious
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]{task.description}[/bold blue]"),
+                BarColumn(bar_width=40),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                console=console,
+                expand=True,
+            ) as progress:
+                # Check if partial file exists for resume
+                downloaded_size = 0
+                if destination.exists():
+                    downloaded_size = destination.stat().st_size
+                    console.print(f"[yellow]→ Resuming download from {format_size(downloaded_size)}...[/yellow]")
+                
+                # Prepare headers for resume
+                headers = {}
+                if downloaded_size > 0:
+                    headers['Range'] = f'bytes={downloaded_size}-'
+                
+                task = progress.add_task(
+                    f"Downloading {filename[:40]}...", 
+                    total=100,
+                    completed=0
+                )
+                
+                # Download file with resume support
+                response = requests.get(
+                    download_url, 
+                    stream=True, 
+                    timeout=60,
+                    headers=headers,
+                    allow_redirects=True
+                )
+                response.raise_for_status()
+                
+                # Get total size
+                total_size = int(response.headers.get("content-length", 0))
+                if downloaded_size > 0 and response.status_code == 206:  # Partial content
+                    total_size += downloaded_size
+                
+                # Open file in append mode if resuming, write mode otherwise
+                mode = "ab" if downloaded_size > 0 else "wb"
+                
+                with open(destination, mode) as f:
+                    for chunk in response.iter_content(chunk_size=32768):  # Larger chunk size
+                        if chunk:
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+                            if total_size > 0:
+                                percentage = (downloaded_size / total_size) * 100
+                                progress.update(task, completed=percentage)
+                            else:
+                                # If we don't know total size, just show as indeterminate
+                                progress.update(
+                                    task, completed=(downloaded_size / (1024 * 1024)) % 100
+                                )
+                
+                # Download completed successfully, break retry loop
+                break
+                
+        except (requests.exceptions.ChunkedEncodingError, 
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                Exception) as e:
+            retry_count += 1
+            if retry_count < max_retries:
+                console.print(
+                    f"[yellow]⚠ Download interrupted: {str(e)[:100]}[/yellow]"
+                )
+                console.print(
+                    f"[yellow]→ Retrying... (attempt {retry_count + 1}/{max_retries})[/yellow]"
+                )
+                time.sleep(2)  # Wait before retry
+            else:
                 console.print(
                     Panel(
-                        f"Download may have failed - file size is only {file_size} bytes",
-                        title="[bold yellow]⚠ Warning[/bold yellow]",
-                        border_style="yellow",
+                        f"Download failed after {max_retries} attempts: {e}",
+                        title="[bold red]✗ Error[/bold red]",
+                        border_style="red",
                     )
                 )
-                if not Confirm.ask("[yellow]Keep this file anyway?[/yellow]"):
+                # Clean up partial download
+                if destination.exists():
                     destination.unlink()
-                    return False
-
-            console.print(
-                Panel(
-                    f"[green]✓ Download complete![/green]\n"
-                    f"[dim]Saved to: {destination}[/dim]\n"
-                    f"[dim]Size: {format_size(file_size)}[/dim]",
-                    title="[bold green]Success[/bold green]",
-                    border_style="green",
-                    box=box.ROUNDED,
-                )
+                return False
+    
+    # Verify file was downloaded
+    if not destination.exists():
+        console.print(
+            Panel(
+                "Download file not found after completion",
+                title="[bold red]✗ Error[/bold red]",
+                border_style="red",
             )
-
-            # Add to history
-            history = load_json(HISTORY_PATH)
-            history.append(
-                {
-                    "title": result.get("title"),
-                    "time": time.time(),
-                    "type": "direct",
-                    "path": str(destination),
-                    "source": result.get("source"),
-                    "size": file_size,
-                }
+        )
+        return False
+    
+    file_size = destination.stat().st_size
+    if file_size < 1024:  # Less than 1KB is suspicious
+        console.print(
+            Panel(
+                f"Download may have failed - file size is only {file_size} bytes",
+                title="[bold yellow]⚠ Warning[/bold yellow]",
+                border_style="yellow",
             )
-            save_json(HISTORY_PATH, history)
-
-            return True
-
-        except Exception as e:
-            console.print(
-                Panel(
-                    f"Download failed: {e}",
-                    title="[bold red]✗ Error[/bold red]",
-                    border_style="red",
-                )
-            )
-            # Clean up partial download
-            if destination.exists():
-                destination.unlink()
+        )
+        if not Confirm.ask("[yellow]Keep this file anyway?[/yellow]"):
+            destination.unlink()
             return False
+    
+    console.print(
+        Panel(
+            f"[green]✓ Download complete![/green]\n"
+            f"[dim]Saved to: {destination}[/dim]\n"
+            f"[dim]Size: {format_size(file_size)}[/dim]",
+            title="[bold green]Success[/bold green]",
+            border_style="green",
+            box=box.ROUNDED,
+        )
+    )
+    
+    # Add to history
+    history = load_json(HISTORY_PATH)
+    history.append(
+        {
+            "title": result.get("title"),
+            "time": time.time(),
+            "type": "direct",
+            "path": str(destination),
+            "source": result.get("source"),
+            "size": file_size,
+        }
+    )
+    save_json(HISTORY_PATH, history)
+    return True
 
 
 def download_with_progress(item: Dict[str, Any]) -> None:
@@ -439,7 +488,6 @@ def download_with_progress(item: Dict[str, Any]) -> None:
         return
     cfg = load_json(CONFIG_PATH)
     qb = qb_client()
-
     # Show torrent info panel
     info_panel = Panel(
         f"[cyan]Title:[/cyan] {safe_str(item.get('Title'))}\n"
@@ -451,7 +499,6 @@ def download_with_progress(item: Dict[str, Any]) -> None:
         box=box.ROUNDED,
     )
     console.print(info_panel)
-
     active_downloads = qb.torrents_info(filter="downloading")
     if len(active_downloads) >= cfg.get("max_active_downloads", 5):
         console.print(
@@ -463,7 +510,6 @@ def download_with_progress(item: Dict[str, Any]) -> None:
             )
         )
         return
-
     mag = item.get("MagnetUri") or item.get("Link")
     if not mag:
         console.print(
@@ -474,7 +520,6 @@ def download_with_progress(item: Dict[str, Any]) -> None:
             )
         )
         return
-
     if not mag.startswith(("magnet:", "http")):
         console.print(
             Panel(
@@ -484,9 +529,7 @@ def download_with_progress(item: Dict[str, Any]) -> None:
             )
         )
         return
-
     download_path = cfg["download_path"]
-
     try:
         result = qb.torrents_add(
             urls=mag,
@@ -504,13 +547,10 @@ def download_with_progress(item: Dict[str, Any]) -> None:
             )
         )
         return
-
     console.print("[dim]→ Searching for torrent in qBittorrent...[/dim]")
     time.sleep(2)
-
     name = safe_str(item.get("Title"))
     task_hash = find_torrent_by_name(qb, name, max_wait=15)
-
     if not task_hash:
         console.print(
             Panel(
@@ -520,11 +560,8 @@ def download_with_progress(item: Dict[str, Any]) -> None:
             )
         )
         return
-
     console.print(f"[green]✓ Found torrent (hash: {task_hash[:8]}...)[/green]")
-
     last_state = None
-
     with Progress(
         SpinnerColumn(),
         TextColumn("[bold blue]{task.description}[/bold blue]"),
@@ -546,7 +583,6 @@ def download_with_progress(item: Dict[str, Any]) -> None:
             upload_speed="0 B/s",
             state="initializing",
         )
-
         while not progress.finished:
             try:
                 info = qb.torrents_info(torrent_hashes=task_hash)[0]
@@ -559,9 +595,7 @@ def download_with_progress(item: Dict[str, Any]) -> None:
                     )
                 )
                 break
-
             current_state = safe_str(info.state)
-
             progress.update(
                 task,
                 completed=info.progress * 100 if info.progress is not None else 0,
@@ -573,10 +607,8 @@ def download_with_progress(item: Dict[str, Any]) -> None:
                 else "0 B/s",
                 state=current_state,
             )
-
             if last_state != current_state:
                 last_state = current_state
-
             if info.progress >= 1.0 and info.state in ["downloading", "metaDL"]:
                 progress.update(task, state="completing")
             elif info.progress >= 1.0 and info.state in [
@@ -594,9 +626,7 @@ def download_with_progress(item: Dict[str, Any]) -> None:
                     )
                 )
                 break
-
             time.sleep(1)
-
     console.print(
         Panel(
             f"[green]✓ Download complete![/green]\n"
@@ -606,11 +636,9 @@ def download_with_progress(item: Dict[str, Any]) -> None:
             box=box.ROUNDED,
         )
     )
-
     history = load_json(HISTORY_PATH)
     history.append({"title": item.get("Title"), "time": time.time(), "hash": task_hash})
     save_json(HISTORY_PATH, history)
-
     if cfg.get("auto_remove_completed") and task_hash:
         try:
             qb.torrents_delete(torrent_hashes=task_hash, delete_files=False)
@@ -624,16 +652,13 @@ def download_with_progress(item: Dict[str, Any]) -> None:
 def browse_interactive() -> None:
     """Interactive browse and download."""
     console.print(Rule("[bold cyan]🔍 Torrent & Books Search[/bold cyan]"))
-
     # Ask for search type
     search_type = Prompt.ask(
         "[cyan]Search type[/cyan]",
         choices=["general", "books", "games", "movies"],
         default="general",
     )
-
     query = Prompt.ask("[cyan]Enter search query[/cyan]")
-
     with console.status("[bold green]Searching...", spinner="dots"):
         api = get_api_client()
         if search_type == "books":
@@ -644,7 +669,6 @@ def browse_interactive() -> None:
             results = api.search_movies(query, 50)
         else:
             results = api.search(query, 50)
-
     if not results:
         console.print(
             Panel(
@@ -654,18 +678,14 @@ def browse_interactive() -> None:
             )
         )
         return
-
     page_size = 10
     page = 0
-
     while True:
         start = page * page_size
         page_items = results[start : start + page_size]
         total_pages = (len(results) - 1) // page_size + 1
-
         console.clear()
         console.print(Rule(f"[bold cyan]Results for '{query}'[/bold cyan]"))
-
         tbl = Table(
             title=f"Page {page + 1}/{total_pages} | Type: {search_type}",
             box=box.ROUNDED,
@@ -678,23 +698,18 @@ def browse_interactive() -> None:
         tbl.add_column("Size", justify="right", style="green")
         tbl.add_column("Type", justify="center", style="magenta")
         tbl.add_column("Source", justify="center", style="cyan")
-
         for i, r in enumerate(page_items, start=start + 1):
             download_type_icon = (
                 "📦" if r.download_type == DownloadType.DIRECT else "🧲"
             )
-
             tbl.add_row(str(i), r.title[:70], r.size, download_type_icon, r.source)
-
         console.print(tbl)
         console.print("\n[dim]📦 = Direct Download | 🧲 = Torrent[/dim]")
-
         action = Prompt.ask(
             "[cyan]Action[/cyan] [[bold]n[/bold]]ext | [[bold]p[/bold]]rev | [bold]number[/bold] | [[bold]q[/bold]]uit",
             choices=["n", "p", "q"]
             + [str(i) for i in range(start + 1, start + 1 + len(page_items))],
         )
-
         if action == "n" and start + page_size < len(results):
             page += 1
         elif action == "p" and page > 0:
@@ -705,13 +720,11 @@ def browse_interactive() -> None:
             try:
                 idx = int(action) - 1
                 item = results[idx]
-
                 # Show details
                 details_text = f"[bold cyan]Title:[/bold cyan] {item.title}\n"
                 details_text += f"[bold cyan]Size:[/bold cyan] {item.size}\n"
                 details_text += f"[bold cyan]Type:[/bold cyan] {'Direct Download 📦' if item.download_type == DownloadType.DIRECT else 'Torrent 🧲'}\n"
                 details_text += f"[bold cyan]Source:[/bold cyan] {item.source}\n"
-
                 if item.download_type == DownloadType.DIRECT:
                     # Show book metadata
                     details_text += f"[bold cyan]Authors:[/bold cyan] {item.extra.get('authors', 'N/A')}\n"
@@ -719,7 +732,6 @@ def browse_interactive() -> None:
                     details_text += f"[bold cyan]Publisher:[/bold cyan] {item.extra.get('publisher', 'N/A')}\n"
                 else:
                     details_text += f"[bold cyan]Seeders:[/bold cyan] {get_health_icon(item.seeders)} {item.seeders}\n"
-
                 console.print(
                     Panel(
                         details_text,
@@ -727,7 +739,6 @@ def browse_interactive() -> None:
                         border_style="green",
                     )
                 )
-
                 if Confirm.ask("[bold cyan]Download this?[/bold cyan]"):
                     # Convert to dict for download_with_progress
                     item_dict = {
@@ -747,9 +758,7 @@ def browse_interactive() -> None:
                         "extra": item.extra,
                         "source": item.source,
                     }
-
                     download_with_progress(item_dict)
-
                     # Save to last results - convert enums to strings
                     results_dicts = []
                     for r in results:
@@ -760,7 +769,6 @@ def browse_interactive() -> None:
                         ):
                             r_dict["download_type"] = r_dict["download_type"].value
                         results_dicts.append(r_dict)
-
                     save_json(LAST_RESULTS, results_dicts)
                     return
             except (ValueError, IndexError) as e:
@@ -777,10 +785,8 @@ def browse() -> None:
 def search(query: str, limit: int = 10) -> None:
     """🔎 Search torrents via zil_tor API."""
     console.print(Rule(f"[bold cyan]🔍 Searching for '{query}'[/bold cyan]"))
-
     with console.status("[bold green]Fetching results...", spinner="dots"):
         results = fetch(query, limit)
-
     if not results:
         console.print(
             Panel(
@@ -790,7 +796,6 @@ def search(query: str, limit: int = 10) -> None:
             )
         )
         return
-
     # Convert to dicts for JSON serialization - handle enums
     results_dicts = []
     for r in results:
@@ -801,9 +806,7 @@ def search(query: str, limit: int = 10) -> None:
         ):
             r_dict["download_type"] = r_dict["download_type"].value
         results_dicts.append(r_dict)
-
     save_json(LAST_RESULTS, results_dicts)
-
     tbl = Table(
         title=f"Search Results: {query}",
         box=box.ROUNDED,
@@ -816,7 +819,6 @@ def search(query: str, limit: int = 10) -> None:
     tbl.add_column("Size", justify="right", style="green")
     tbl.add_column("Seeds", justify="center", style="yellow")
     tbl.add_column("Health", justify="center")
-
     for i, r in enumerate(results, 1):
         seeders = r.seeders
         health_icon = get_health_icon(seeders)
@@ -827,7 +829,6 @@ def search(query: str, limit: int = 10) -> None:
             safe_str(seeders),
             health_icon,
         )
-
     console.print(tbl)
     console.print(f"\n[dim]💡 Tip: Use 'download <number>' to download a result[/dim]")
 
@@ -845,20 +846,17 @@ def download(index: int) -> None:
             )
         )
         return
-
     item = results[index - 1]
-
     # Convert download_type string back to enum if needed
     if "download_type" in item and isinstance(item["download_type"], str):
         if item["download_type"] == "direct":
             item["DownloadType"] = DownloadType.DIRECT
         else:
             item["DownloadType"] = DownloadType.TORRENT
-
     download_with_progress(item)
 
 
-@app.command()
+@app.command("list")
 def list_downloads(
     all_torrents: bool = typer.Option(
         False, "--all", "-a", help="List all torrents, not just active"
@@ -872,9 +870,7 @@ def list_downloads(
             if all_torrents
             else qb.torrents_info(filter="downloading")
         )
-
     title = "All Torrents" if all_torrents else "Active Downloads"
-
     if not torrents:
         console.print(
             Panel(
@@ -884,9 +880,7 @@ def list_downloads(
             )
         )
         return
-
     console.print(Rule(f"[bold cyan]{title}[/bold cyan]"))
-
     tbl = Table(
         box=box.ROUNDED, show_header=True, header_style="bold cyan", border_style="blue"
     )
@@ -896,7 +890,6 @@ def list_downloads(
     tbl.add_column("Size", justify="right", style="cyan")
     tbl.add_column("Ratio", justify="center", style="magenta")
     tbl.add_column("Hash", justify="right", style="dim")
-
     for t in torrents:
         name = safe_str(t.name)
         progress_val = f"{t.progress * 100:.1f}%" if t.progress is not None else "0.0%"
@@ -905,7 +898,6 @@ def list_downloads(
         ratio = f"{t.ratio:.2f}" if t.ratio is not None else "N/A"
         torrent_hash = safe_str(t.hash)[:8] + "..."
         tbl.add_row(name[:50], progress_val, state, size, ratio, torrent_hash)
-
     console.print(tbl)
 
 
@@ -913,16 +905,13 @@ def list_downloads(
 def server_info() -> None:
     """🖥️  Display detailed server and indexer information."""
     console.print(Rule("[bold cyan]🖥️  Server Information[/bold cyan]"))
-
     try:
         api = get_api_client()
-
         # Get health, stats, and indexers
         with console.status("[bold green]Fetching server info...", spinner="dots"):
             health = api.health_check()
             stats = api.get_stats()
             indexers = api.get_indexers()
-
         # Server status panel
         status_color = (
             "green"
@@ -938,7 +927,6 @@ def server_info() -> None:
             if health["status"] == "degraded"
             else "❌"
         )
-
         server_panel = Panel(
             f"[{status_color}]{status_icon} Status: {health['status'].upper()}[/{status_color}]\n"
             f"[cyan]Uptime:[/cyan] {health.get('uptime', 'N/A')}\n"
@@ -953,7 +941,6 @@ def server_info() -> None:
             box=box.ROUNDED,
         )
         console.print(server_panel)
-
         # Indexers table
         console.print("\n")
         indexer_table = Table(
@@ -967,7 +954,6 @@ def server_info() -> None:
         indexer_table.add_column("Status", justify="center")
         indexer_table.add_column("Type", justify="center", style="magenta")
         indexer_table.add_column("Health", justify="center")
-
         # Group indexers by type
         indexer_types = {
             "YTS": "Movies",
@@ -978,31 +964,24 @@ def server_info() -> None:
             "annas": "Books",
             "Repacks": "Games",
         }
-
         healthy_count = 0
         for idx in indexers:
             name = idx.get("name", "Unknown")
             enabled = idx.get("enabled", False)
             healthy = idx.get("healthy", False)
-
             if healthy:
                 healthy_count += 1
-
             status = "[green]✓ Online[/green]" if healthy else "[red]✗ Offline[/red]"
             health_icon = "🟢" if healthy else "🔴"
             idx_type = indexer_types.get(name, "Other")
-
             indexer_table.add_row(name, status, idx_type, health_icon)
-
         console.print(indexer_table)
-
         # Summary
         summary_text = Text()
         summary_text.append(f"\n📊 Summary: ", style="bold cyan")
         summary_text.append(f"{healthy_count}/{len(indexers)} ", style="bold green")
         summary_text.append(f"indexers online", style="dim")
         console.print(summary_text)
-
     except APIError as e:
         console.print(
             Panel(
@@ -1017,11 +996,9 @@ def server_info() -> None:
 def search_movies(query: str, limit: int = 10) -> None:
     """🎬 Search specifically for movies."""
     console.print(Rule(f"[bold cyan]🎬 Searching movies for '{query}'[/bold cyan]"))
-
     with console.status("[bold green]Fetching movies...", spinner="dots"):
         api = get_api_client()
         results = api.search_movies(query, limit)
-
     if not results:
         console.print(
             Panel(
@@ -1031,11 +1008,9 @@ def search_movies(query: str, limit: int = 10) -> None:
             )
         )
         return
-
     # Convert to dicts for JSON serialization
     results_dicts = [r.__dict__ for r in results]
     save_json(LAST_RESULTS, results_dicts)
-
     tbl = Table(
         title=f"🎬 Movie Results: {query}",
         box=box.ROUNDED,
@@ -1049,11 +1024,9 @@ def search_movies(query: str, limit: int = 10) -> None:
     tbl.add_column("Quality", justify="center", style="yellow")
     tbl.add_column("Seeds", justify="center", style="yellow")
     tbl.add_column("Source", justify="center", style="magenta")
-
     for i, r in enumerate(results, 1):
         seeders = r.seeders
         health_icon = get_health_icon(seeders)
-
         # Try to extract quality from title
         quality = "N/A"
         title = r.title.lower()
@@ -1065,11 +1038,9 @@ def search_movies(query: str, limit: int = 10) -> None:
             quality = "720p"
         elif "480p" in title:
             quality = "480p"
-
         tbl.add_row(
             str(i), r.title[:70], r.size, quality, f"{health_icon} {seeders}", r.source
         )
-
     console.print(tbl)
     console.print(f"\n[dim]💡 Tip: Use 'download <number>' to download a movie[/dim]")
 
@@ -1083,9 +1054,7 @@ def browse_category(
 ) -> None:
     """🗂️  Browse content by category without search."""
     console.print(Rule(f"[bold cyan]🗂️  Browsing {category.title()}[/bold cyan]"))
-
     api = get_api_client()
-
     try:
         with console.status(f"[bold green]Loading {category}...", spinner="dots"):
             if category.lower() == "games":
@@ -1122,7 +1091,6 @@ def browse_category(
                     )
                 )
                 return
-
         if not results:
             console.print(
                 Panel(
@@ -1132,7 +1100,6 @@ def browse_category(
                 )
             )
             return
-
         # Display results
         tbl = Table(
             title=title,
@@ -1146,10 +1113,8 @@ def browse_category(
         tbl.add_column("Size", justify="right", style="green")
         tbl.add_column("Date", justify="center", style="yellow")
         tbl.add_column("Source", justify="center", style="magenta")
-
         results_dicts = [r.__dict__ for r in results]
         save_json(LAST_RESULTS, results_dicts)
-
         for i, r in enumerate(results, 1):
             tbl.add_row(
                 str(i),
@@ -1158,10 +1123,8 @@ def browse_category(
                 r.publish_date[:10] if r.publish_date else "N/A",
                 r.source,
             )
-
         console.print(tbl)
         console.print(f"\n[dim]💡 Tip: Use 'download <number>' to download[/dim]")
-
     except APIError as e:
         console.print(
             Panel(
@@ -1177,32 +1140,26 @@ def dashboard() -> None:
     """📊 Show comprehensive dashboard with server status and recent activity."""
     console.clear()
     console.print(Rule("[bold cyan]📊 TorrentCLI Dashboard[/bold cyan]"))
-
     try:
         api = get_api_client()
         qb = qb_client()
-
         with console.status("[bold green]Loading dashboard...", spinner="dots"):
             # Get API info
             health = api.health_check()
             stats = api.get_stats()
             indexers = api.get_indexers()
-
             # Get qBittorrent info
             torrents = qb.torrents_info()
             active_torrents = [
                 t for t in torrents if t.state in ["downloading", "uploading"]
             ]
-
             # Get history
             hist = load_json(HISTORY_PATH)
             recent_hist = hist[-5:] if len(hist) > 0 else []
-
         # Create layout
         layout = Layout()
         layout.split_column(Layout(name="header", size=7), Layout(name="body"))
         layout["body"].split_row(Layout(name="left"), Layout(name="right"))
-
         # Header: Server status
         status_color = "green" if health["status"] == "healthy" else "yellow"
         header_text = Text()
@@ -1214,11 +1171,9 @@ def dashboard() -> None:
             f" | 📡 Indexers: {health.get('healthy_count')}/{health.get('total_indexers')}",
             style="cyan",
         )
-
         layout["header"].update(
             Panel(Align.center(header_text), border_style=status_color, box=box.HEAVY)
         )
-
         # Left: Active torrents
         active_table = Table(
             title="🔄 Active Downloads",
@@ -1228,16 +1183,13 @@ def dashboard() -> None:
         )
         active_table.add_column("Name", no_wrap=False, max_width=40)
         active_table.add_column("Progress", justify="center")
-
         if active_torrents:
             for t in active_torrents[:5]:
                 progress = f"{t.progress * 100:.1f}%" if t.progress else "0%"
                 active_table.add_row(t.name[:40], f"[green]{progress}[/green]")
         else:
             active_table.add_row("[dim]No active downloads[/dim]", "")
-
         layout["left"].update(Panel(active_table, border_style="blue"))
-
         # Right: Recent downloads
         history_table = Table(
             title="📜 Recent Downloads",
@@ -1247,7 +1199,6 @@ def dashboard() -> None:
         )
         history_table.add_column("Title", no_wrap=False, max_width=40)
         history_table.add_column("Time", justify="right")
-
         if recent_hist:
             for entry in reversed(recent_hist):
                 time_str = datetime.fromtimestamp(entry.get("time", 0)).strftime(
@@ -1256,11 +1207,8 @@ def dashboard() -> None:
                 history_table.add_row(entry.get("title", "")[:40], time_str)
         else:
             history_table.add_row("[dim]No download history[/dim]", "")
-
         layout["right"].update(Panel(history_table, border_style="blue"))
-
         console.print(layout)
-
         # Quick stats bar
         stats_text = Text()
         stats_text.append(f"\n📊 Total Downloads: ", style="bold")
@@ -1269,9 +1217,7 @@ def dashboard() -> None:
         stats_text.append(f"{len(active_torrents)}", style="yellow")
         stats_text.append(f"  |  💾 Cache: ", style="bold")
         stats_text.append(f"{stats.get('cache_size', 0)} entries", style="cyan")
-
         console.print(Align.center(stats_text))
-
     except Exception as e:
         console.print(
             Panel(
@@ -1286,7 +1232,6 @@ def dashboard() -> None:
 def quick_search() -> None:
     """⚡ Quick interactive search with category selection."""
     console.print(Rule("[bold cyan]⚡ Quick Search[/bold cyan]"))
-
     # Category selection with icons
     category_map = {
         "1": ("movies", "🎬 Movies"),
@@ -1294,22 +1239,16 @@ def quick_search() -> None:
         "3": ("games", "🎮 Games"),
         "4": ("", "🌐 All Categories"),
     }
-
     console.print("\n[bold cyan]Select Category:[/bold cyan]")
     for key, (_, display) in category_map.items():
         console.print(f"  [{key}] {display}")
-
     choice = Prompt.ask(
         "\n[cyan]Category[/cyan]", choices=list(category_map.keys()), default="4"
     )
-
     category_value, category_name = category_map[choice]
-
     query = Prompt.ask(f"\n[cyan]Search {category_name}[/cyan]")
-
     with console.status(f"[bold green]Searching {category_name}...", spinner="dots"):
         api = get_api_client()
-
         if category_value == "movies":
             results = api.search_movies(query, 20)
         elif category_value == "books":
@@ -1318,7 +1257,6 @@ def quick_search() -> None:
             results = api.search_games(query, 20)
         else:
             results = api.search(query, 20)
-
     if not results:
         console.print(
             Panel(
@@ -1328,24 +1266,18 @@ def quick_search() -> None:
             )
         )
         return
-
     results_dicts = [r.__dict__ for r in results]
     save_json(LAST_RESULTS, results_dicts)
-
     # Show top 5 results
     console.print(f"\n[bold green]Found {len(results)} results[/bold green]\n")
-
     for i, r in enumerate(results[:5], 1):
         type_icon = "📦" if r.is_direct_download() else "🧲"
         health = get_health_icon(r.seeders) if not r.is_direct_download() else ""
-
         console.print(f"[bold cyan]{i}.[/bold cyan] {r.title[:70]}")
         console.print(f"   {type_icon} Size: {r.size} {health}")
         console.print()
-
     if len(results) > 5:
         console.print(f"[dim]... and {len(results) - 5} more results[/dim]\n")
-
     if Confirm.ask("[cyan]Download first result?[/cyan]"):
         download_with_progress(results_dicts[0])
 
@@ -1362,7 +1294,6 @@ def remove(
     """🗑️ Remove a torrent by its hash or part of its name."""
     qb = qb_client()
     torrents_to_remove = []
-
     if len(hash_or_name) == 40 and all(
         c in "0123456789abcdefABCDEF" for c in hash_or_name
     ):
@@ -1372,7 +1303,6 @@ def remove(
         torrents_to_remove = [
             t for t in all_torrents if hash_or_name.lower() in safe_str(t.name).lower()
         ]
-
     if not torrents_to_remove:
         console.print(
             Panel(
@@ -1382,7 +1312,6 @@ def remove(
             )
         )
         return
-
     if len(torrents_to_remove) > 1:
         console.print(
             Panel(
@@ -1391,17 +1320,13 @@ def remove(
                 border_style="yellow",
             )
         )
-
         tbl = Table(box=box.ROUNDED, border_style="blue")
         tbl.add_column("#", style="cyan")
         tbl.add_column("Name", style="white")
         tbl.add_column("Hash", style="dim")
-
         for i, t in enumerate(torrents_to_remove):
             tbl.add_row(str(i + 1), safe_str(t.name)[:60], safe_str(t.hash)[:8] + "...")
-
         console.print(tbl)
-
         while True:
             choice = Prompt.ask(
                 "[cyan]Enter number to remove, or 'q' to quit[/cyan]",
@@ -1417,14 +1342,12 @@ def remove(
                 console.print("[red]Invalid choice. Please try again.[/red]")
     else:
         selected_torrent = torrents_to_remove[0]
-
     warning_text = (
         f"Remove '{safe_str(selected_torrent.name)}'?\n"
         f"Hash: {safe_str(selected_torrent.hash)[:16]}...\n"
     )
     if delete_files:
         warning_text += "\n[bold red]⚠️ Files will also be deleted![/bold red]"
-
     if Confirm.ask(
         Panel(
             warning_text,
@@ -1455,7 +1378,6 @@ def pause(
     """⏸️ Pause a torrent by hash or name."""
     qb = qb_client()
     torrents_to_pause = []
-
     if len(hash_or_name) == 40 and all(
         c in "0123456789abcdefABCDEF" for c in hash_or_name
     ):
@@ -1465,7 +1387,6 @@ def pause(
         torrents_to_pause = [
             t for t in all_torrents if hash_or_name.lower() in safe_str(t.name).lower()
         ]
-
     if not torrents_to_pause:
         console.print(
             Panel(
@@ -1475,18 +1396,14 @@ def pause(
             )
         )
         return
-
     if len(torrents_to_pause) > 1:
         tbl = Table(box=box.ROUNDED)
         tbl.add_column("#", style="cyan")
         tbl.add_column("Name")
         tbl.add_column("Hash", style="dim")
-
         for i, t in enumerate(torrents_to_pause):
             tbl.add_row(str(i + 1), safe_str(t.name)[:60], safe_str(t.hash)[:8] + "...")
-
         console.print(tbl)
-
         while True:
             choice = Prompt.ask(
                 "[cyan]Enter number to pause, or 'q' to quit[/cyan]",
@@ -1502,7 +1419,6 @@ def pause(
                 console.print("[red]Invalid choice[/red]")
     else:
         selected_torrent = torrents_to_pause[0]
-
     qb.torrents_pause(torrent_hashes=selected_torrent.hash)
     console.print(
         Panel(
@@ -1522,7 +1438,6 @@ def resume(
     """▶️ Resume a torrent by hash or name."""
     qb = qb_client()
     torrents_to_resume = []
-
     if len(hash_or_name) == 40 and all(
         c in "0123456789abcdefABCDEF" for c in hash_or_name
     ):
@@ -1532,7 +1447,6 @@ def resume(
         torrents_to_resume = [
             t for t in all_torrents if hash_or_name.lower() in safe_str(t.name).lower()
         ]
-
     if not torrents_to_resume:
         console.print(
             Panel(
@@ -1542,18 +1456,14 @@ def resume(
             )
         )
         return
-
     if len(torrents_to_resume) > 1:
         tbl = Table(box=box.ROUNDED)
         tbl.add_column("#", style="cyan")
         tbl.add_column("Name")
         tbl.add_column("Hash", style="dim")
-
         for i, t in enumerate(torrents_to_resume):
             tbl.add_row(str(i + 1), safe_str(t.name)[:60], safe_str(t.hash)[:8] + "...")
-
         console.print(tbl)
-
         while True:
             choice = Prompt.ask(
                 "[cyan]Enter number to resume, or 'q' to quit[/cyan]",
@@ -1569,7 +1479,6 @@ def resume(
                 console.print("[red]Invalid choice[/red]")
     else:
         selected_torrent = torrents_to_resume[0]
-
     qb.torrents_resume(torrent_hashes=selected_torrent.hash)
     console.print(
         Panel(
@@ -1590,7 +1499,6 @@ def set_priority(
     """⚡ Set the download priority of a torrent."""
     qb = qb_client()
     torrents_to_prioritize = []
-
     if len(hash_or_name) == 40 and all(
         c in "0123456789abcdefABCDEF" for c in hash_or_name
     ):
@@ -1600,7 +1508,6 @@ def set_priority(
         torrents_to_prioritize = [
             t for t in all_torrents if hash_or_name.lower() in safe_str(t.name).lower()
         ]
-
     if not torrents_to_prioritize:
         console.print(
             Panel(
@@ -1610,18 +1517,14 @@ def set_priority(
             )
         )
         return
-
     if len(torrents_to_prioritize) > 1:
         tbl = Table(box=box.ROUNDED)
         tbl.add_column("#", style="cyan")
         tbl.add_column("Name")
         tbl.add_column("Hash", style="dim")
-
         for i, t in enumerate(torrents_to_prioritize):
             tbl.add_row(str(i + 1), safe_str(t.name)[:60], safe_str(t.hash)[:8] + "...")
-
         console.print(tbl)
-
         while True:
             choice = Prompt.ask(
                 "[cyan]Enter number to set priority, or 'q' to quit[/cyan]",
@@ -1638,7 +1541,6 @@ def set_priority(
                 console.print("[red]Invalid choice[/red]")
     else:
         selected_torrent = torrents_to_prioritize[0]
-
     qb.torrents_set_priority(torrent_hashes=selected_torrent.hash, priority=priority)
     console.print(
         Panel(
@@ -1656,9 +1558,7 @@ def stats(days: int = typer.Option(7, help="Last N days stats")) -> None:
     cutoff = time.time() - days * 86400
     recent = [e for e in hist if e.get("time", 0) >= cutoff]
     cnt = len(recent)
-
     console.print(Rule(f"[bold cyan]📊 Download Statistics[/bold cyan]"))
-
     stats_panel = Panel(
         f"[cyan]Downloads in last {days} days:[/cyan] [bold green]{cnt}[/bold green]\n"
         f"[cyan]Total downloads (all time):[/cyan] [bold]{len(hist)}[/bold]\n"
@@ -1675,14 +1575,11 @@ def api_status() -> None:
     """📊 Show Go API status and indexers."""
     try:
         api = get_api_client()
-
         # Health check
         health = api.health_check()
         indexers = api.get_indexers()
         stats = api.get_stats()
-
         console.print(Rule("[bold cyan]📊 Go API Status[/bold cyan]"))
-
         # Overall health
         status_color = (
             "green"
@@ -1701,7 +1598,6 @@ def api_status() -> None:
                 border_style=status_color,
             )
         )
-        ...
     except APIError as e:
         console.print(
             Panel(
@@ -1716,7 +1612,6 @@ def api_status() -> None:
 def history() -> None:
     """📜 Show download history."""
     hist = load_json(HISTORY_PATH)
-
     if not hist:
         console.print(
             Panel(
@@ -1726,16 +1621,13 @@ def history() -> None:
             )
         )
         return
-
     console.print(Rule("[bold cyan]📜 Download History[/bold cyan]"))
-
     tbl = Table(
         box=box.ROUNDED, show_header=True, header_style="bold cyan", border_style="blue"
     )
     tbl.add_column("Time", style="green")
     tbl.add_column("Title", style="white", no_wrap=False, max_width=60)
     tbl.add_column("Hash", justify="right", style="dim")
-
     # Show most recent first
     for e in reversed(hist[-50:]):  # Last 50 entries
         time_str = (
@@ -1748,7 +1640,6 @@ def history() -> None:
             safe_str(e.get("title"))[:60],
             safe_str(e.get("hash", "N/A"))[:8] + "...",
         )
-
     console.print(tbl)
     console.print(
         f"\n[dim]Showing last {min(50, len(hist))} of {len(hist)} total downloads[/dim]"
@@ -1759,9 +1650,7 @@ def history() -> None:
 def config() -> None:
     """⚙️ Show the current configuration."""
     console.print(Rule("[bold cyan]⚙️ Current Configuration[/bold cyan]"))
-
     cfg = load_json(CONFIG_PATH)
-
     # Create a formatted display
     config_text = ""
     for key, value in cfg.items():
@@ -1771,10 +1660,9 @@ def config() -> None:
                 # Mask password
                 if sub_key == "password":
                     sub_value = "***"
-                config_text += f" [yellow]{sub_key}:[/yellow] {sub_value}\n"
+                config_text += f"  [yellow]{sub_key}:[/yellow] {sub_value}\n"
         else:
             config_text += f"[bold cyan]{key}:[/bold cyan] {value}\n"
-
     console.print(
         Panel(
             config_text.strip(),
@@ -1796,7 +1684,6 @@ def set_config(
     cfg = load_json(CONFIG_PATH)
     keys = key.split(".")
     temp_cfg = cfg
-
     for i, k in enumerate(keys):
         if i == len(keys) - 1:
             try:
@@ -1843,7 +1730,6 @@ def set_config(
             if k not in temp_cfg or not isinstance(temp_cfg[k], dict):
                 temp_cfg[k] = {}
             temp_cfg = temp_cfg[k]
-
     save_json(CONFIG_PATH, cfg)
 
 
@@ -1867,11 +1753,9 @@ def schedule_add(
             )
         )
         return
-
     sched = load_json(SCHEDULE_PATH)
     sched.append({"query": query, "time": when, "done": False, "limit": limit})
     save_json(SCHEDULE_PATH, sched)
-
     console.print(
         Panel(
             f"[cyan]Query:[/cyan] {query}\n"
@@ -1888,7 +1772,6 @@ def schedule_add(
 def schedule_list() -> None:
     """📅 List all scheduled downloads."""
     sched = load_json(SCHEDULE_PATH)
-
     if not sched:
         console.print(
             Panel(
@@ -1898,9 +1781,7 @@ def schedule_list() -> None:
             )
         )
         return
-
     console.print(Rule("[bold cyan]📅 Scheduled Downloads[/bold cyan]"))
-
     tbl = Table(
         box=box.ROUNDED, show_header=True, header_style="bold cyan", border_style="blue"
     )
@@ -1908,7 +1789,6 @@ def schedule_list() -> None:
     tbl.add_column("Query", style="white")
     tbl.add_column("Time", style="yellow")
     tbl.add_column("Status", justify="center")
-
     for i, task in enumerate(sched, 1):
         status = (
             "[green]✓ Done[/green]"
@@ -1918,7 +1798,6 @@ def schedule_list() -> None:
         tbl.add_row(
             str(i), safe_str(task.get("query")), safe_str(task.get("time")), status
         )
-
     console.print(tbl)
 
 
@@ -1928,7 +1807,6 @@ def schedule_remove(
 ) -> None:
     """🗑️ Remove a scheduled download by its index."""
     sched = load_json(SCHEDULE_PATH)
-
     if not 1 <= index <= len(sched):
         console.print(
             Panel(
@@ -1938,10 +1816,8 @@ def schedule_remove(
             )
         )
         return
-
     removed_task = sched.pop(index - 1)
     save_json(SCHEDULE_PATH, sched)
-
     console.print(
         Panel(
             f"[cyan]Query:[/cyan] {safe_str(removed_task.get('query'))}\n"
@@ -1956,7 +1832,6 @@ def schedule_remove(
 def top_torrents(limit: int = 10) -> None:
     """🏆 Display the top torrents from the last search (by seeders)."""
     results = load_json(LAST_RESULTS)
-
     if not results:
         console.print(
             Panel(
@@ -1966,11 +1841,8 @@ def top_torrents(limit: int = 10) -> None:
             )
         )
         return
-
     sorted_results = sorted(results, key=lambda x: x.get("seeders", 0), reverse=True)
-
     console.print(Rule(f"[bold cyan]🏆 Top {limit} Torrents by Seeders[/bold cyan]"))
-
     tbl = Table(
         box=box.ROUNDED, show_header=True, header_style="bold cyan", border_style="blue"
     )
@@ -1979,11 +1851,9 @@ def top_torrents(limit: int = 10) -> None:
     tbl.add_column("Size", justify="right", style="green")
     tbl.add_column("Seeds", justify="center", style="yellow")
     tbl.add_column("Health", justify="center")
-
     for i, r in enumerate(sorted_results[:limit], 1):
         seeders = r.get("seeders", 0)
         health_icon = get_health_icon(seeders)
-
         # Medal for top 3
         rank = ""
         if i == 1:
@@ -1994,7 +1864,6 @@ def top_torrents(limit: int = 10) -> None:
             rank = "🥉"
         else:
             rank = str(i)
-
         tbl.add_row(
             rank,
             safe_str(r.get("title"))[:70],
@@ -2002,24 +1871,22 @@ def top_torrents(limit: int = 10) -> None:
             safe_str(seeders),
             health_icon,
         )
-
     console.print(tbl)
 
 
 if __name__ == "__main__":
-    import sys
-
     # Start background threads
     threading.Thread(target=health_monitor, daemon=True).start()
     threading.Thread(target=schedule_runner, daemon=True).start()
-
     # Show welcome only when launched without arguments
     if len(sys.argv) == 1:
         show_welcome_banner()
-        Prompt.ask(
-            "[dim]Press ENTER to continue or just type command[/dim]",
-            default="",
-            console=console,
+        # Prompt for command
+        user_command = Prompt.ask(
+            "\n[bold cyan]Enter command[/bold cyan]",
+            default="browse"
         )
-
+        if user_command:
+            # Insert the command into sys.argv for Typer to process
+            sys.argv.append(user_command)
     app()
