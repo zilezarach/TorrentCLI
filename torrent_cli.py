@@ -662,13 +662,13 @@ def browse_interactive() -> None:
     with console.status("[bold green]Searching...", spinner="dots"):
         api = get_api_client()
         if search_type == "books":
-            results = api.search_books(query, 50)
+            results = api.search_books(query, 25)
         elif search_type == "games":
-            results = api.search_games(query, 50)
+            results = api.search_games(query, 25)
         elif search_type == "movies":
-            results = api.search_movies(query, 50)
+            results = api.search_movies(query, 25)
         else:
-            results = api.search(query, 50)
+            results = api.search(query, 25)
     if not results:
         console.print(
             Panel(

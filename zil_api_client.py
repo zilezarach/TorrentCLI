@@ -104,7 +104,7 @@ class SearchResult:
 class GoTorrentAPI:
     """Client for the Go torrent API"""
 
-    def __init__(self, base_url: str = "http://127.0.0.1:9117", timeout: int = 30):
+    def __init__(self, base_url: str = "http://127.0.0.1:9117", timeout: int = 180):
         """
         Initialize the Go API client
 
@@ -162,7 +162,7 @@ class GoTorrentAPI:
         if category:
             params["category"] = category
 
-        response = self._make_request("GET", "/api/v1/search", params=params)
+        response = self._make_request("GET", "/api/v1/search", params=params, timeout=180)
         data = response.json()
 
         results = []
@@ -176,7 +176,7 @@ class GoTorrentAPI:
 
         return results
 
-    def search_movies(self, query: str, limit: int = 25) -> List[SearchResult]:
+    def search_movies(self, query: str, limit: int = 10) -> List[SearchResult]:
         """
         Search for movies specifically
 
@@ -188,7 +188,7 @@ class GoTorrentAPI:
             List of SearchResult objects
         """
         params = {"query": query, "limit": limit}
-        response = self._make_request("GET", "/api/v1/movies/search", params=params)
+        response = self._make_request("GET", "/api/v1/movies/search", params=params, timeout=180)
         data = response.json()
         results = []
         for item in data.get("results", []):
@@ -200,7 +200,7 @@ class GoTorrentAPI:
         return results
 
     def search_books(
-        self, query: str, limit: int = 25, source: str = "both"
+        self, query: str, limit: int = 10, source: str = "both"
     ) -> List[SearchResult]:
         """
         Search for books (uses unified search by default)
@@ -220,7 +220,7 @@ class GoTorrentAPI:
             endpoint = "/api/v1/books/search/source"
             params = {"query": query, "limit": limit, "source": source}
 
-        response = self._make_request("GET", endpoint, params=params)
+        response = self._make_request("GET", endpoint, params=params, timeout=180)
         data = response.json()
 
         results = []
@@ -246,7 +246,7 @@ class GoTorrentAPI:
         """
         params = {"query": query, "limit": limit}
         response = self._make_request(
-            "GET", "/api/v1/games/repacks/search", params=params
+            "GET", "/api/v1/games/repacks/search", params=params, timeout=180
         )
         data = response.json()
 
@@ -260,7 +260,7 @@ class GoTorrentAPI:
 
         return results
 
-    def get_latest_games(self, limit: int = 30) -> List[SearchResult]:
+    def get_latest_games(self, limit: int = 20) -> List[SearchResult]:
         """
         Get latest game repacks
 
