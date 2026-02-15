@@ -1,4 +1,4 @@
-#!/home/zil/production/torrent_cli/venv/bin/python3
+#!/usr/bin/env python3
 """
 Go Torrent API Client
 A client for interacting with the custom Go torrent API that supports
@@ -6,6 +6,7 @@ both magnet links and direct downloads (like LibGen and Anna's Archive).
 """
 
 import requests
+import time
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
@@ -115,34 +116,99 @@ class GoTorrentAPI:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
+        # Improve session settings for stability
         self.session.headers.update(
-            {"User-Agent": "TorrentCLI/2.0", "Accept": "application/json"}
+            {
+                "User-Agent": "TorrentCLI/2.0",
+                "Accept": "application/json",
+                "Connection": "keep-alive",
+            }
         )
+        # Configure retry adapter
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
 
-    def _make_request(self, method: str, path: str, **kwargs) -> requests.Response:
-        """Internal helper to make HTTP requests with consistent error handling"""
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
+        )
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy, pool_connections=10, pool_maxsize=20
+        )
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+
+    def _make_request(
+        self, method: str, path: str, max_retries: int = 3, **kwargs
+    ) -> requests.Response:
+        """Internal helper to make HTTP requests with consistent error handling and retry logic"""
         url = f"{self.base_url}{path}"
         if "timeout" not in kwargs:
             kwargs["timeout"] = self.timeout
-        try:
-            response = self.session.request(method, url, **kwargs)
-            response.raise_for_status()
-            return response
-        except requests.HTTPError as e:
-            if e.response.status_code == 404:
-                raise APIError(f"Endpoint not found: {path}")
-            elif e.response.status_code >= 500:
-                raise APIError(f"Server error: {e.response.status_code}")
-            else:
-                raise APIError(f"HTTP {e.response.status_code}: {str(e)}")
-        except requests.ConnectionError:
+
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = self.session.request(method, url, **kwargs)
+                response.raise_for_status()
+                return response
+            except requests.HTTPError as e:
+                if e.response.status_code == 404:
+                    raise APIError(f"Endpoint not found: {path}")
+                elif e.response.status_code >= 500:
+                    if attempt < max_retries - 1:
+                        time.sleep(2**attempt)
+                        continue
+                    raise APIError(f"Server error: {e.response.status_code}")
+                else:
+                    raise APIError(f"HTTP {e.response.status_code}: {str(e)}")
+            except (
+                requests.ConnectionError,
+                requests.exceptions.ChunkedEncodingError,
+                ConnectionResetError,
+                BrokenPipeError,
+            ) as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    # Wait before retry (exponential backoff)
+                    time.sleep(2**attempt)
+                    # Recreate session on connection error
+                    self.session.close()
+                    self.session = requests.Session()
+                    self.session.headers.update(
+                        {
+                            "User-Agent": "TorrentCLI/2.0",
+                            "Accept": "application/json",
+                            "Connection": "keep-alive",
+                        }
+                    )
+                    continue
+                raise APIError(
+                    f"Connection failed after {max_retries} attempts. Make sure the API server is running at {self.base_url}. Error: {str(e)}"
+                )
+            except requests.Timeout:
+                last_error = e
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                    continue
+                raise APIError(
+                    f"Request timed out after {self.timeout} seconds and {max_retries} retries"
+                )
+            except requests.RequestException as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                    continue
+                raise APIError(f"Request failed after {max_retries} attempts: {str(e)}")
+
+        # If we get here, all retries failed
+        if last_error:
             raise APIError(
-                f"Could not connect to API at {self.base_url}. Make sure the server is running."
+                f"Request failed after {max_retries} attempts: {str(last_error)}"
             )
-        except requests.Timeout:
-            raise APIError(f"Request timed out after {self.timeout} seconds")
-        except requests.RequestException as e:
-            raise APIError(f"Request failed: {str(e)}")
+        raise APIError(f"Request failed after {max_retries} attempts")
 
     def search(
         self, query: str, limit: int = 25, category: Optional[str] = None
@@ -162,7 +228,9 @@ class GoTorrentAPI:
         if category:
             params["category"] = category
 
-        response = self._make_request("GET", "/api/v1/search", params=params, timeout=180)
+        response = self._make_request(
+            "GET", "/api/v1/search", params=params, timeout=180
+        )
         data = response.json()
 
         results = []
@@ -177,18 +245,11 @@ class GoTorrentAPI:
         return results
 
     def search_movies(self, query: str, limit: int = 10) -> List[SearchResult]:
-        """
-        Search for movies specifically
-
-        Args:
-            query: Movie search query
-            limit: Maximum number of results
-
-        Returns:
-            List of SearchResult objects
-        """
+        """Search for movies specifically"""
         params = {"query": query, "limit": limit}
-        response = self._make_request("GET", "/api/v1/movies/search", params=params, timeout=180)
+        response = self._make_request(
+            "GET", "/api/v1/movies/search", params=params, timeout=180
+        )
         data = response.json()
         results = []
         for item in data.get("results", []):
@@ -202,17 +263,7 @@ class GoTorrentAPI:
     def search_books(
         self, query: str, limit: int = 10, source: str = "both"
     ) -> List[SearchResult]:
-        """
-        Search for books (uses unified search by default)
-
-        Args:
-            query: Book search query
-            limit: Maximum number of results
-            source: "both" (default), "libgen", or "annas"
-
-        Returns:
-            List of SearchResult objects with direct download links
-        """
+        """Search for books (uses unified search by default)"""
         if source == "both":
             endpoint = "/api/v1/books/search"
             params = {"query": query, "limit": limit}
@@ -234,16 +285,7 @@ class GoTorrentAPI:
         return results
 
     def search_games(self, query: str, limit: int = 20) -> List[SearchResult]:
-        """
-        Search for game repacks (FitGirl, DODI)
-
-        Args:
-            query: Game search query
-            limit: Maximum number of results
-
-        Returns:
-            List of SearchResult objects
-        """
+        """Search for game repacks (FitGirl, DODI)"""
         params = {"query": query, "limit": limit}
         response = self._make_request(
             "GET", "/api/v1/games/repacks/search", params=params, timeout=180
@@ -261,15 +303,7 @@ class GoTorrentAPI:
         return results
 
     def get_latest_games(self, limit: int = 20) -> List[SearchResult]:
-        """
-        Get latest game repacks
-
-        Args:
-            limit: Maximum number of results
-
-        Returns:
-            List of SearchResult objects
-        """
+        """Get latest game repacks"""
         params = {"limit": limit}
         response = self._make_request(
             "GET", "/api/v1/games/repacks/latest", params=params
@@ -288,47 +322,32 @@ class GoTorrentAPI:
     def get_download_url(
         self, md5: str, source: str = "auto", source_hint: str = ""
     ) -> Dict[str, Any]:
+        """Get download URL for a book by MD5"""
         params = {"md5": md5}
 
         if source.lower() not in ("auto", ""):
             params["source"] = source.lower()
 
         if source_hint:
-            params["source_hint"] = source_hint.lower()  # e.g. "annasarchive"
+            params["source_hint"] = source_hint.lower()
 
         endpoint = "/api/v1/books/download"
-
         response = self._make_request("GET", endpoint, params=params, timeout=120)
         return response.json()
 
     def get_indexers(self) -> List[Dict[str, Any]]:
-        """
-        Get list of available indexers and their status
-
-        Returns:
-            List of indexer info dictionaries
-        """
+        """Get list of available indexers and their status"""
         response = self._make_request("GET", "/api/v1/indexers")
         data = response.json()
         return data.get("indexers", [])
 
     def health_check(self) -> Dict[str, Any]:
-        """
-        Check API health status
-
-        Returns:
-            Health status dictionary
-        """
+        """Check API health status"""
         response = self._make_request("GET", "/api/v1/health")
         return response.json()
 
     def get_stats(self) -> Dict[str, Any]:
-        """
-        Get API statistics
-
-        Returns:
-            Statistics dictionary
-        """
+        """Get API statistics"""
         response = self._make_request("GET", "/api/v1/stats")
         return response.json()
 
@@ -339,18 +358,7 @@ class GoTorrentAPI:
         chunk_size: int = 8192,
         progress_callback: Optional[callable] = None,
     ) -> str:
-        """
-        Download a direct file (for LibGen books, etc.)
-
-        Args:
-            url: Direct download URL
-            destination: Destination file path
-            chunk_size: Download chunk size in bytes
-            progress_callback: Optional callback for progress updates (bytes_downloaded, total_bytes)
-
-        Returns:
-            Path to downloaded file
-        """
+        """Download a direct file (for LibGen books, etc.)"""
         try:
             response = self.session.get(url, stream=True, timeout=self.timeout)
             response.raise_for_status()
@@ -370,147 +378,13 @@ class GoTorrentAPI:
         except requests.RequestException as e:
             raise APIError(f"Direct download failed: {str(e)}")
 
+    def __del__(self):
+        """Clean up session on deletion"""
+        if hasattr(self, "session"):
+            self.session.close()
+
 
 class APIError(Exception):
     """Custom exception for API errors"""
 
     pass
-
-
-# Compatibility wrapper to maintain existing interface
-class GoAPIWrapper:
-    """Wrapper to provide Jackett-like interface for existing code"""
-
-    def __init__(self, api_url: str = "http://127.0.0.1:9117"):
-        self.client = GoTorrentAPI(api_url)
-
-    def fetch(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Fetch results in Jackett-compatible format
-
-        Args:
-            query: Search query
-            limit: Result limit
-
-        Returns:
-            List of result dictionaries compatible with original code
-        """
-        results = self.client.search(query, limit)
-
-        # Convert to Jackett-like format
-        jackett_format = []
-        for result in results:
-            item = {
-                "Title": result.title,
-                "Size": result.size,
-                "Seeders": result.seeders,
-                "Leechers": result.leechers,
-                "CategoryDesc": result.category,
-                "PublishDate": result.publish_date,
-                "InfoHash": result.info_hash,
-                # Special handling for direct vs magnet
-                "MagnetUri": result.download_url
-                if not result.is_direct_download()
-                else None,
-                "Link": result.download_url
-                if result.is_direct_download()
-                else result.download_url,
-                # Add extra metadata
-                "Extra": result.extra,
-                "IsDirectDownload": result.is_direct_download(),
-                "Source": result.source,
-                "DownloadType": result.download_type.value,  # Convert enum to string
-            }
-            jackett_format.append(item)
-
-        return jackett_format
-
-
-# Example usage
-if __name__ == "__main__":
-    # Initialize API client
-    api = GoTorrentAPI("http://127.0.0.1:9117")
-
-    try:
-        # Health check
-        print("🏥 Checking API health...")
-        health = api.health_check()
-        print(f"Status: {health.get('status')}")
-        print(
-            f"Healthy indexers: {health.get('healthy_count')}/{health.get('total_indexers')}"
-        )
-        print()
-
-        # Search for books (unified - both LibGen and Anna's Archive)
-        print("📚 Searching for books (unified search)...")
-        book_results = api.search_books("golang programming", limit=5)
-        print(f"Found {len(book_results)} books\n")
-
-        for i, result in enumerate(book_results, 1):
-            print(f"{i}. 📖 {result.title[:70]}")
-            print(f"   Size: {result.size} | Source: {result.source}")
-            print(f"   Direct Download: {result.is_direct_download()}")
-            if result.is_direct_download():
-                print(f"   Authors: {result.extra.get('authors', 'N/A')}")
-                print(f"   Extension: {result.extra.get('extension', 'N/A')}")
-                # Show MD5 for download
-                if result.info_hash:
-                    print(f"   MD5: {result.info_hash}")
-            print()
-
-        # Search for movies
-        print("\n🎬 Searching for movies...")
-        movie_results = api.search_movies("Inception", limit=5)
-        print(f"Found {len(movie_results)} movies\n")
-
-        for i, result in enumerate(movie_results, 1):
-            print(f"{i}. 🎥 {result.title[:70]}")
-            print(
-                f"   Size: {result.size} | Seeders: {result.seeders} | Source: {result.source}"
-            )
-            print()
-
-        # Search for games
-        print("\n🎮 Searching for games...")
-        game_results = api.search_games("cyberpunk", limit=3)
-        print(f"Found {len(game_results)} games\n")
-
-        for i, result in enumerate(game_results, 1):
-            print(f"{i}. 🎮 {result.title[:70]}")
-            print(f"   Size: {result.size} | Source: {result.source}")
-            print()
-
-        # Get latest games
-        print("\n🆕 Getting latest game repacks...")
-        latest_games = api.get_latest_games(limit=3)
-        print(f"Found {len(latest_games)} latest games\n")
-
-        for i, result in enumerate(latest_games, 1):
-            print(f"{i}. 🎮 {result.title[:70]}")
-            print(f"   Size: {result.size} | Source: {result.source}")
-            print()
-
-        # Demonstrate download URL fetching for a book
-        if book_results and book_results[0].info_hash:
-            print("\n📥 Testing download URL fetch...")
-            md5 = book_results[0].info_hash
-            try:
-                download_info = api.get_download_url(md5)
-                print(
-                    f"Download URL: {download_info.get('download_url', 'N/A')[:80]}..."
-                )
-                print(f"Source used: {download_info.get('source', 'N/A')}")
-                print(f"Cached: {download_info.get('cached', False)}")
-            except APIError as e:
-                print(f"Note: {e}")
-
-    except APIError as e:
-        print(f"\n❌ API Error: {e}")
-        print("\nMake sure the Go Torrent API is running:")
-        print("  cd zil_tor-api")
-        print("  docker-compose up -d")
-    except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
-        import traceback
-
-        traceback.print_exc()
