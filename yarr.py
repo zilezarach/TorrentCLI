@@ -1337,6 +1337,7 @@ def main(ctx: typer.Context):
         )
         menu.add_row("[bold cyan]4.[/bold cyan] list", "[dim]Active downloads[/dim]")
         menu.add_row("[bold cyan]5.[/bold cyan] history", "[dim]Download history[/dim]")
+        menu.add_row("[bold cyan]6.[/bold cyan] help", "[dim]Show all commands[/dim]")
 
         console.print(
             Panel(
@@ -1346,7 +1347,54 @@ def main(ctx: typer.Context):
                 box=box.ROUNDED,
             )
         )
-        console.print("\n[dim]Type 'yarr --help' for all commands[/dim]\n")
+
+        # Interactive menu
+        choice = Prompt.ask(
+            "\\n[cyan]Select option[/cyan] [dim](1-6 or command name)[/dim]",
+            default="1",
+        )
+
+        # Map choices to commands
+        commands = {
+            "1": browse,
+            "2": quick,
+            "3": dashboard,
+            "4": lambda: list_downloads(all=False),
+            "5": history,
+            "6": lambda: console.print("[dim]Run 'yarr --help' for all commands[/dim]"),
+        }
+
+        # Execute the selected command
+        if choice in commands:
+            try:
+                commands[choice]()
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]")
+        elif choice.lower() in [
+            "browse",
+            "quick",
+            "dashboard",
+            "list",
+            "history",
+            "help",
+        ]:
+            # Allow typing command names
+            if choice.lower() == "browse":
+                browse()
+            elif choice.lower() == "quick":
+                quick()
+            elif choice.lower() == "dashboard":
+                dashboard()
+            elif choice.lower() == "list":
+                list_downloads(all=False)
+            elif choice.lower() == "history":
+                history()
+            elif choice.lower() == "help":
+                console.print("[dim]Run 'yarr --help' for all commands[/dim]")
+        else:
+            console.print(
+                "[yellow]Invalid option. Run 'yarr --help' for commands.[/yellow]"
+            )
 
 
 if __name__ == "__main__":
