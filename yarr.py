@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Yarr - TUI Torrent CLI 🏴‍☠️
+Yarr - Enhanced TUI Torrent CLI 🏴‍☠️
 A beautiful command-line interface for torrents, books, movies, and games.
-With a modern design, and smooth user experience.
+With improved error handling, modern design, and smooth user experience.
 """
 
 import sys
@@ -73,10 +73,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 def ensure_files() -> None:
     """Ensure directories and configuration files exist."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Create config if it doesn't exist
     if not CONFIG_PATH.exists():
         CONFIG_PATH.write_text(json.dumps(DEFAULT_CONFIG, indent=2))
 
-    cfg = load_json(CONFIG_PATH)
+    # Load config directly (no recursion)
+    try:
+        cfg = json.loads(CONFIG_PATH.read_text())
+    except (json.JSONDecodeError, FileNotFoundError):
+        cfg = DEFAULT_CONFIG
+        CONFIG_PATH.write_text(json.dumps(DEFAULT_CONFIG, indent=2))
 
     # Ensure download directories exist
     Path(cfg["download_path"]).mkdir(parents=True, exist_ok=True)
@@ -84,6 +91,7 @@ def ensure_files() -> None:
         parents=True, exist_ok=True
     )
 
+    # Create history/schedule files
     for p in (HISTORY_PATH, SCHEDULE_PATH, LAST_RESULTS):
         if not p.exists():
             p.write_text(json.dumps([], indent=2))
@@ -91,7 +99,9 @@ def ensure_files() -> None:
 
 def load_json(path: Path) -> Any:
     """Load JSON data from file."""
-    ensure_files()
+    if not path.exists():
+        ensure_files()
+
     try:
         return json.loads(path.read_text())
     except json.JSONDecodeError:
@@ -252,17 +262,26 @@ def show_welcome_banner():
         stats.add_column(justify="center")
         stats.add_column(justify="center")
 
-        status_icon = "✅" if health["status"] == "healthy" else "⚠️"
+        status_icon = "✅" if health.get("status") == "healthy" else "⚠️"
+        healthy_count = health.get("healthy_count", 0)
+        total_count = health.get("total_indexers", 0)
+
         stats.add_row(
             f"[green]{status_icon} API Online[/green]",
-            f"[cyan]📡 {health.get('healthy_count', 0)} Indexers[/cyan]",
+            f"[cyan]📡 {healthy_count}/{total_count} Indexers[/cyan]",
             f"[yellow]⚡ Ready[/yellow]",
         )
 
         console.print(Align.center(stats))
-    except:
+    except APIError as e:
         console.print(
-            Align.center("[yellow]⚠ API offline - Limited functionality[/yellow]")
+            Align.center(f"[red]✗ API Offline[/red] [dim]({str(e)[:50]})[/dim]")
+        )
+    except Exception as e:
+        console.print(
+            Align.center(
+                f"[yellow]⚠ API Status Unknown[/yellow] [dim]({str(e)[:30]})[/dim]"
+            )
         )
 
     console.print()
