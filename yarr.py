@@ -187,70 +187,28 @@ def show_welcome_banner():
     """Display enhanced welcome banner."""
     console.clear()
 
-    banner = Text()
-    banner.append("\n")
-    banner.append(
-        "    ╔════════════════════════════════════════════════════════════════╗\n",
-        style="bold cyan",
-    )
-    banner.append(
-        "    ║                                                                ║\n",
-        style="bold cyan",
-    )
-    banner.append(
-        "    ║        ██╗   ██╗ █████╗ ██████╗ ██████╗                       ║\n",
-        style="bold magenta",
-    )
-    banner.append(
-        "    ║        ╚██╗ ██╔╝██╔══██╗██╔══██╗██╔══██╗                      ║\n",
-        style="bold magenta",
-    )
-    banner.append(
-        "    ║         ╚████╔╝ ███████║██████╔╝██████╔╝                      ║\n",
-        style="bold magenta",
-    )
-    banner.append(
-        "    ║          ╚██╔╝  ██╔══██║██╔══██╗██╔══██╗                      ║\n",
-        style="bold magenta",
-    )
-    banner.append(
-        "    ║           ██║   ██║  ██║██║  ██║██║  ██║                      ║\n",
-        style="bold magenta",
-    )
-    banner.append(
-        "    ║           ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝                      ║\n",
-        style="bold magenta",
-    )
-    banner.append(
-        "    ║                                                                ║\n",
-        style="bold cyan",
-    )
-    banner.append(
-        "    ║              🏴‍☠️  The Pirate's Terminal  🏴‍☠️                    ║\n",
-        style="bold yellow",
-    )
-    banner.append(
-        "    ║                                                                ║\n",
-        style="bold cyan",
-    )
-    banner.append(
-        "    ║           Torrents • Books • Movies • Games                    ║\n",
-        style="dim white",
-    )
-    banner.append(
-        "    ║                   Powered by ZilTor                            ║\n",
-        style="dim white",
-    )
-    banner.append(
-        "    ║                                                                ║\n",
-        style="bold cyan",
-    )
-    banner.append(
-        "    ╚════════════════════════════════════════════════════════════════╝\n",
-        style="bold cyan",
-    )
+    art = Text(justify="center")
+    art.append("\n")
+    art.append(" ██╗   ██╗ █████╗ ██████╗ ██████╗ \n", style="bold magenta")
+    art.append(" ╚██╗ ██╔╝██╔══██╗██╔══██╗██╔══██╗\n", style="bold magenta")
+    art.append("  ╚████╔╝ ███████║██████╔╝██████╔╝\n", style="bold magenta")
+    art.append("   ╚██╔╝  ██╔══██║██╔══██╗██╔══██╗\n", style="bold magenta")
+    art.append("    ██║   ██║  ██║██║  ██║██║  ██║\n", style="bold magenta")
+    art.append("    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝\n", style="bold magenta")
+    art.append("\n")
+    art.append("  🏴‍☠️  The Pirate's Terminal  🏴‍☠️\n", style="bold yellow")
+    art.append("\n")
+    art.append("Torrents  •  Books  •  Movies  •  Games\n", style="dim white")
+    art.append("Powered by ZilTor\n", style="dim white")
+    art.append("\n")
 
-    console.print(Align.center(banner))
+    console.print(
+        Panel(
+            Align.center(art),
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
 
     # Quick stats
     try:
