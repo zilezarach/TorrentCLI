@@ -1355,8 +1355,9 @@ def main(ctx: typer.Context):
             )
 
 
-if __name__ == "__main__":
-    # Background threads
+def main() -> None:
+    """Entry point for the installed `yarr` command."""
+
     def health_monitor():
         while True:
             cfg = load_json(CONFIG_PATH)
@@ -1373,5 +1374,8 @@ if __name__ == "__main__":
             time.sleep(cfg.get("health_check_interval", 3600))
 
     threading.Thread(target=health_monitor, daemon=True).start()
-
     app()
+
+
+if __name__ == "__main__":
+    main()

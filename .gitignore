@@ -1,2 +1,14 @@
 venv
+.venv
 __pycache__
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Runtime data (stored in ~/.yarr/ at runtime; root-level copies are stale)
+history.json
+last.json
+schedule.json
