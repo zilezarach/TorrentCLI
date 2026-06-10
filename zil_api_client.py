@@ -76,10 +76,14 @@ class SearchResult:
                 or data.get("link", "")
             )
         else:
-            download_url = data.get("magnet_uri", "") or data.get("link", "")
+            download_url = (
+                data.get("magnet_uri", "")
+                or data.get("magnet", "")
+                or data.get("link", "")
+            )
 
         return cls(
-            title=data.get("title", ""),
+            title=data.get("title", "") or data.get("name", ""),
             download_url=download_url,
             download_type=download_type,
             info_hash=data.get("info_hash", ""),
@@ -242,6 +246,54 @@ class GoTorrentAPI:
                 print(f"Warning: Skipped malformed result: {e}")
                 continue
 
+        return results
+
+    def search_linux_games(self, query: str, limit: int = 20) -> List[SearchResult]:
+        """Search for Linux native/wine games (jc141)"""
+        params = {"query": query, "limit": limit}
+        response = self._make_request(
+            "GET", "/api/v1/games/linux/search", params=params, timeout=60
+        )
+        data = response.json()
+
+        results = []
+        for item in data.get("results", []):
+            try:
+                result = SearchResult.from_api_response(item)
+                # Magnet is in magnet_uri field for linux games
+                if not result.download_url:
+                    result.download_url = item.get("magnet_uri", "") or item.get(
+                        "magnet", ""
+                    )
+                results.append(result)
+            except Exception as e:
+                print(f"Warning: Skipped malformed linux game result: {e}")
+                continue
+        return results
+
+    def get_all_linux_games(self, limit: int = 0) -> List[SearchResult]:
+        """Get all available Linux games"""
+        params = {}
+        if limit > 0:
+            params["limit"] = limit
+
+        response = self._make_request(
+            "GET", "/api/v1/games/linux/all", params=params, timeout=60
+        )
+        data = response.json()
+
+        results = []
+        for item in data.get("results", []):
+            try:
+                result = SearchResult.from_api_response(item)
+                if not result.download_url:
+                    result.download_url = item.get("magnet_uri", "") or item.get(
+                        "magnet", ""
+                    )
+                results.append(result)
+            except Exception as e:
+                print(f"Warning: Skipped malformed linux game result: {e}")
+                continue
         return results
 
     def search_movies(self, query: str, limit: int = 10) -> List[SearchResult]:
