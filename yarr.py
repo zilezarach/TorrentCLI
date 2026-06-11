@@ -518,7 +518,12 @@ def download_with_progress(item: Dict[str, Any]) -> None:
         )
         return
 
-    mag = item.get("MagnetUri") or item.get("Link")
+    mag = (
+        item.get("MagnetUri")
+        or item.get("magnet_uri")
+        or item.get("magnet")
+        or item.get("Link")
+    )
     if not mag or not mag.startswith(("magnet:", "http")):
         console.print(
             Panel(
@@ -808,6 +813,12 @@ def browse_interactive() -> None:
                         "MagnetUri": item.download_url
                         if item.download_type != DownloadType.DIRECT
                         else None,
+                        "magnet_uri": item.download_url
+                        if item.download_type != DownloadType.DIRECT
+                        else None,
+                        "magnet": item.download_url
+                        if item.download_type != DownloadType.DIRECT
+                        else None,
                         "Link": item.download_url,
                         "extra": item.extra,
                         "source": item.source,
@@ -1029,6 +1040,7 @@ def server_info() -> None:
             "1337x": "General",
             "Fitgirl": "Games",
             "DODI": "Games",
+            "LinuxGames": "🐧 Linux",
             "libgen": "Books",
             "annas": "Books",
             "Repacks": "Games",
@@ -1214,7 +1226,8 @@ def quick() -> None:
         "1": ("movies", "🎬 Movies"),
         "2": ("books", "📚 Books"),
         "3": ("games", "🎮 Games"),
-        "4": ("", "🌐 All"),
+        "4": ("linux", "🐧 Linux Games"),
+        "5": ("", "🌐 All"),
     }
 
     console.print("\n[bold cyan]Category:[/bold cyan]")
@@ -1237,6 +1250,8 @@ def quick() -> None:
                 results = api.search_books(query, 20)
             elif cat_value == "games":
                 results = api.search_games(query, 20)
+            elif cat_value == "linux":
+                results = api.search_linux_games(query, 20)
             else:
                 results = api.search(query, 20)
         except APIError as e:
